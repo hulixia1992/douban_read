@@ -35,6 +35,7 @@ DoubanData implements HtmlBean{
     public String translator;
     public String contentIntro;
     public String directory;
+    public String promotion;//推介
     public List<String> tags=new ArrayList<String>();
     public RatingData ratingData=new RatingData();
     public List<WhereBuyData> whereBuyData=new ArrayList<WhereBuyData>();

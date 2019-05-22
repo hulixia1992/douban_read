@@ -19,11 +19,18 @@ import java.io.*;
 public class Main {
     public static int excelNum = 1;
     public static int rowNum = 0;
+    public static int itemNum = 0;
 
-    private static void getData(String url, String id) throws Exception {
+
+    private static void getData(String url, String id) {
         DoubanData data = new DoubanData();
         Connection conn = Jsoup.connect(url);
-        Document document = conn.get();
+        Document document = null;
+        try {
+            document = conn.get();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 //初始化基本数据
         data.bookname = document.select("div#wrapper > h1 > span").text();
         System.out.println(data.bookname);
@@ -42,6 +49,9 @@ public class Main {
 
             } else if (element.text().contains("出品方")) {
                 data.producer = element.nextSibling().outerHtml();
+                if (data.producer.equals("&nbsp;")) {
+                    data.producer = element.nextElementSibling().text();
+                }
 
             } else if (element.text().contains("出版年")) {
                 data.publishTime = element.nextSibling().outerHtml();
@@ -57,6 +67,9 @@ public class Main {
 
             } else if (element.text().contains("丛书")) {
                 data.seriesOfBook = element.nextSibling().outerHtml();
+                if (data.seriesOfBook.equals("&nbsp;")) {
+                    data.seriesOfBook = element.nextElementSibling().text();
+                }
 
             } else if (element.text().contains("ISBN")) {
                 data.ISBN = element.nextSibling().outerHtml();
@@ -72,60 +85,93 @@ public class Main {
             }
 
         }
-        data.contentIntro = document.select("#link-report > span.short > div").text();
+        //#link-report > span.short > div
+        data.contentIntro = String.join(System.lineSeparator(), document.select("#link-report > div > div.intro").select("p").eachText());
         if (document.select("#link-report > span.all.hidden > div > div") != null) {
-            data.contentIntro += document.select("#link-report > span.all.hidden > div > div").text();
+            data.contentIntro += String.join(System.lineSeparator(), document.select("#link-report > span.all.hidden > div > div.intro").select("p").eachText());
         }
 
-        data.directory = document.select("#dir_" + id + "_short").text();
+        data.directory = String.join(System.lineSeparator(), document.select("#dir_" + id + "_short").eachText());
         if (document.select("#dir_" + id + "_full") != null) {
-            data.directory += document.select("#dir_" + id + "_full").text();
+            data.directory += String.join(System.lineSeparator(), document.select("#dir_" + id + "_full").eachText());
         }
         //初始化标签
-        Elements tagEles = document.select("#db-tags-section > div").get(0).children();
-        for (Element tagEle : tagEles) {
-            data.tags.add(tagEle.child(0).text());
+        if (document.select("#db-tags-section > div").size() > 0) {
+            Elements tagEles = document.select("#db-tags-section > div").get(0).children();
+            for (Element tagEle : tagEles) {
+                data.tags.add(tagEle.child(0).text());
+            }
         }
         //初始化评分数据
         //   String fiveRate=document.select("#interest_sectl > div > span:nth-child(5)").get(0).text();
-        data.ratingData.fiveRating = document.select("#interest_sectl > div > span:nth-child(5)").get(0).text();
-        System.out.println(data.ratingData.fiveRating);
-        data.ratingData.ratingNum = document.select("#interest_sectl > div > div.rating_self > strong").text();
-        data.ratingData.peopleNum = document.select("#interest_sectl > div > div.rating_self.clearfix > div > div.rating_sum > span > a > span").text();
+        if (document.select("#interest_sectl > div > span:nth-child(5)").size() > 0) {
+            data.ratingData.fiveRating = document.select("#interest_sectl > div > span:nth-child(5)").get(0).text();
+            System.out.println(data.ratingData.fiveRating);
+            data.ratingData.ratingNum = document.select("#interest_sectl > div > div.rating_self > strong").text();
+            data.ratingData.peopleNum = document.select("#interest_sectl > div > div.rating_self.clearfix > div > div.rating_sum > span > a > span").text();
 
-        data.ratingData.fourRating = document.select("#interest_sectl > div > span:nth-child(9)").text();
-        data.ratingData.threeRating = document.select("#interest_sectl > div > span:nth-child(13)").text();
-        data.ratingData.twoRating = document.select("#interest_sectl > div > span:nth-child(17)").text();
-        data.ratingData.oneRating = document.select("#interest_sectl > div > span:nth-child(21)").text();
-        System.out.println(data.ratingData.oneRating);
-        //初始化购买地方
-        Elements whereBugEles = document.select("#buyinfo-printed > ul").get(0).children();
-        for (Element whereBuyEle : whereBugEles) {
-            if (isTextEmpty(whereBuyEle.attr("class")) && whereBuyEle.children().size() > 0) {
-                WhereBuyData whereBuyData = new WhereBuyData();
-                whereBuyData.provider = whereBuyEle.children().get(0).children().get(0).text();
-                whereBuyData.link = whereBuyEle.children().get(0).attr("href");
-                whereBuyData.price = whereBuyEle.children().get(1).children().get(0).text();
-                System.out.println(whereBuyData.price + whereBuyData.link + whereBuyData.provider);
-                data.whereBuyData.add(whereBuyData);
-            }
+            data.ratingData.fourRating = document.select("#interest_sectl > div > span:nth-child(9)").text();
+            data.ratingData.threeRating = document.select("#interest_sectl > div > span:nth-child(13)").text();
+            data.ratingData.twoRating = document.select("#interest_sectl > div > span:nth-child(17)").text();
+            data.ratingData.oneRating = document.select("#interest_sectl > div > span:nth-child(21)").text();
+            System.out.println(data.ratingData.oneRating);
         }
-        data.authorInfo = document.select("#content > div > div.article > div.related_info > div:nth-child(4) > div > div").text();
-        System.out.println(data.authorInfo);
-        Elements readInfoEles = document.select("#collector").get(0).children();
-        for (Element readInfoEle : readInfoEles) {
-            if (readInfoEle.attr("class").equals("pl")) {
-                String readInfo = readInfoEle.children().get(0).text();
-                if (readInfo.contains("在读")) {
-                    data.readingNum = readInfo.substring(0, readInfo.indexOf("人"));
-                } else if (readInfo.contains("读过")) {
-                    data.readedNum = readInfo.substring(0, readInfo.indexOf("人"));
-                } else if (readInfo.contains("想读")) {
-                    data.wantReadNum = readInfo.substring(0, readInfo.indexOf("人"));
+        //初始化购买地方
+        if (document.select("#buyinfo-printed > ul").size() > 0) {
+            Elements whereBugEles = document.select("#buyinfo-printed > ul").get(0).children();
+            for (Element whereBuyEle : whereBugEles) {
+                if (isTextEmpty(whereBuyEle.attr("class")) && whereBuyEle.children().size() > 0) {
+                    WhereBuyData whereBuyData = new WhereBuyData();
+                    whereBuyData.provider = whereBuyEle.children().get(0).children().get(0).text();
+                    whereBuyData.link = whereBuyEle.children().get(0).attr("href");
+                    whereBuyData.price = whereBuyEle.children().get(1).children().get(0).text();
+                    System.out.println(whereBuyData.price + whereBuyData.link + whereBuyData.provider);
+                    data.whereBuyData.add(whereBuyData);
                 }
             }
         }
-        wirteIntoExcel(data);
+        Elements elements = document.select("#content > div > div.article > div.related_info").select("h2");
+        for (Element element :
+                elements) {
+            if (element.text().contains("作者简介")) {
+                data.authorInfo = String.join(System.lineSeparator(), element.nextElementSibling().select("div.intro > p").eachText());
+            }
+        }
+        if (document.select("#collector").size() > 0) {
+            Elements readInfoEles = document.select("#collector").get(0).children();
+            for (Element readInfoEle : readInfoEles) {
+                if (readInfoEle.attr("class").equals("pl")) {
+                    String readInfo = readInfoEle.children().get(0).text();
+                    if (readInfo.contains("在读")) {
+                        data.readingNum = readInfo.substring(0, readInfo.indexOf("人"));
+                    } else if (readInfo.contains("读过")) {
+                        data.readedNum = readInfo.substring(0, readInfo.indexOf("人"));
+                    } else if (readInfo.contains("想读")) {
+                        data.wantReadNum = readInfo.substring(0, readInfo.indexOf("人"));
+                    }
+                }
+            }
+        }
+        //初始化推介
+        if (document.select("#db-rec-section > div").size() > 0) {
+            Elements promotionEles = document.select("#db-rec-section > div").get(0).children();
+            String promotion = "";
+            for (Element element : promotionEles) {
+                if (element.children().size() == 2) {
+                    promotion += element.children().get(1).text() + ",";
+                }
+            }
+            if (promotion.length() > 1) {
+                data.promotion = promotion.substring(0, promotion.length() - 1);
+            } else {
+                data.promotion = promotion;
+            }
+        }
+        try {
+            wirteIntoExcel(data);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
         System.out.println(data.readingNum + ":" + data.readedNum + ":" + data.wantReadNum);
     }
 
@@ -136,6 +182,7 @@ public class Main {
     public static void wirteIntoExcel(DoubanData data) throws Exception {
         File excelFile = new File("D:/other/douban_read_info/douban_read_" + excelNum + ".xls");
         if (!excelFile.exists()) {
+
             HSSFWorkbook workbook = new HSSFWorkbook();//创建Excel文件(Workbook)
             HSSFSheet sheet = workbook.createSheet();//创建工作表(Sheet)
             sheet = workbook.createSheet("Test");//创建工作表(Sheet)
@@ -146,43 +193,224 @@ public class Main {
         if (getExcelLineNum(excelFile) == 0) {//新输入数据
             //
             rowNum = 0;
+            itemNum = 0;
             initExcel(excelFile);
-        } else if (getExcelLineNum(excelFile) == 500) {
+        } else if (itemNum == 500) {
             excelNum++;
             rowNum = 0;
+            itemNum = 0;
             excelFile = new File("D:/other/douban_read_info/douban_read_" + excelNum + ".xlsx");
             initExcel(excelFile);
         }
-        rowNum++;
-        insertData(data, returnWorkBookGivenFileHandle(excelFile));
+        //  rowNum++;
+        itemNum++;
+        insertData(excelFile, data, returnWorkBookGivenFileHandle(excelFile));
 
 
     }
 
-    private static void insertData(DoubanData data, HSSFWorkbook wb) {
+    private static void insertData(File excelFile, DoubanData data, HSSFWorkbook wb) throws IOException {
+        if (wb == null) {
+            throw new IOException("hssfworkbook是空的");
+        }
         HSSFSheet sheet = wb.getSheet("book_info");
         HSSFRow row = sheet.createRow(rowNum);//
+        int buySize = data.whereBuyData.size();
+        for (int i = 0; i < buySize; i++) {
+            HSSFRow newRows = sheet.createRow(rowNum + i);
+            HSSFCell cell = newRows.createCell(24);// 创建行的单元格,也是从0开始
+            cell.setCellValue(data.whereBuyData.get(i).provider);
+            cell = newRows.createCell(25);
+            cell.setCellValue(data.whereBuyData.get(i).link);
+            cell = newRows.createCell(26);
+            cell.setCellValue(data.whereBuyData.get(i).price);
+        }
+        buySize--;
+        if(buySize<0){
+            buySize=0;
+        }
         HSSFCell cell = row.createCell(0);// 创建行的单元格,也是从0开始
         cell.setCellValue(data.bookname);
+        CellRangeAddress region;
+        if(buySize>0){
+         region = new CellRangeAddress(rowNum, rowNum + buySize, 0, 0);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(1);
         cell.setCellValue(data.oriAuthor);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 1, 1);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(2);
         cell.setCellValue(data.subTitle);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 2, 2);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(3);
         cell.setCellValue(data.author);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 3, 3);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(4);
         cell.setCellValue(data.publish);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 4, 4);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(5);
         cell.setCellValue(data.publishTime);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 5, 5);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(6);
         cell.setCellValue(data.pageNumber);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 6, 6);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(7);
         cell.setCellValue(data.price);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 7, 7);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(8);
         cell.setCellValue(data.binging);//装帧
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 8, 8);
+        sheet.addMergedRegion(region);}
+
         cell = row.createCell(9);
         cell.setCellValue(data.seriesOfBook);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 9, 9);
+        sheet.addMergedRegion(region);}
 
+        cell = row.createCell(10);
+        cell.setCellValue(data.authorInfo);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 10, 10);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(11);
+        cell.setCellValue(data.ISBN);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 11, 11);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(12);
+        cell.setCellValue(data.translator);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 12, 12);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(13);
+        cell.setCellValue(data.contentIntro);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 13, 13);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(14);
+        cell.setCellValue(data.directory);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 14, 14);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(15);
+        StringBuilder tags = new StringBuilder();
+        for (String tag : data.tags) {
+            tags.append(tag).append(",");
+        }
+        if (tags.toString().length() > 2) {
+            cell.setCellValue(tags.toString().substring(0, tags.toString().length() - 1));
+        } else {
+            cell.setCellValue(tags.toString());
+        }
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 15, 15);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(16);
+        cell.setCellValue(data.producer);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 16, 16);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(17);
+        cell.setCellValue(data.ratingData.ratingNum);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 17, 17);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(18);
+        cell.setCellValue(data.ratingData.peopleNum);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 18, 18);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(19);
+        cell.setCellValue(data.ratingData.fiveRating);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 19, 19);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(20);
+        cell.setCellValue(data.ratingData.fourRating);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 20, 20);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(21);
+        cell.setCellValue(data.ratingData.threeRating);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 21, 21);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(22);
+        cell.setCellValue(data.ratingData.twoRating);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 22, 22);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(23);
+        cell.setCellValue(data.ratingData.oneRating);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 23, 23);
+        sheet.addMergedRegion(region);}
+
+
+        cell = row.createCell(27);
+        cell.setCellValue(data.promotion);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 27, 27);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(28);
+        cell.setCellValue(data.readingNum);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 28, 28);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(29);
+        cell.setCellValue(data.readedNum);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 29, 29);
+        sheet.addMergedRegion(region);}
+
+        cell = row.createCell(30);
+        cell.setCellValue(data.wantReadNum);
+        if(buySize>0){
+        region = new CellRangeAddress(rowNum, rowNum + buySize, 30, 30);
+        sheet.addMergedRegion(region);}
+
+        rowNum += buySize;
+        OutputStream outputStream = new FileOutputStream(excelFile);
+        wb.write(outputStream);
+        outputStream.close();
 
     }
 
@@ -342,12 +570,12 @@ public class Main {
     }
 
     public static void main(String[] rags) {
-        try {
-          //  wirteIntoExcel(new DoubanData());
-                 getData("https://book.douban.com/subject/4913064/", "4913064");
-        } catch (Exception ex) {
-            System.out.println(ex.getMessage());
-        }
+        // try {
+        //  wirteIntoExcel(new DoubanData());
+        getData("https://book.douban.com/subject/1562932/", "1562932");
+//        } catch (Exception ex) {
+//            System.out.println(ex.getMessage());
+//        }
 
     }
 }
