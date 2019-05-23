@@ -1,8 +1,11 @@
+import com.google.gson.Gson;
+import com.google.gson.annotations.SerializedName;
 import data.DoubanData;
-import data.DoubanUrlData;
-import data.SaveInfoData;
 import data.WhereBuyData;
-
+import okhttp3.*;
+import okhttp3.internal.http.RealResponseBody;
+import okio.GzipSource;
+import okio.Okio;
 import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
@@ -10,28 +13,115 @@ import org.apache.poi.hssf.usermodel.HSSFWorkbook;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.util.CellRangeAddress;
-import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.io.*;
-import java.util.List;
-import java.util.Random;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
+
+class UnzippingInterceptor implements Interceptor {
+
+    @Override
+    public Response intercept(Chain chain) throws IOException {
+        Response response = chain.proceed(chain.request());
+        return unzip(response);
+
+    }
+
+    // copied from okhttp3.internal.http.HttpEngine (because is private)
+    private Response unzip(final Response response) throws IOException {
+        if (response.body() == null) {
+            return response;
+        }
+
+        //check if we have gzip response
+        String contentEncoding = response.headers().get("Content-Encoding");
+
+        //this is used to decompress gzipped responses
+        if (contentEncoding != null && contentEncoding.equals("gzip")) {
+            Long contentLength = response.body().contentLength();
+            GzipSource responseBody = new GzipSource(response.body().source());
+            Headers strippedHeaders = response.headers().newBuilder().build();
+            return response.newBuilder().headers(strippedHeaders)
+                    .body(new RealResponseBody(response.body().contentType().toString(), contentLength, Okio.buffer(responseBody)))
+                    .build();
+        } else {
+            return response;
+        }
+    }
+}
 
 public class Main {
-    public static int excelNum = 1;
-    public static int rowNum = 0;
-    public static int itemNum = 0;
+    private static int excelNum = 1;
+    private static int rowNum = 0;
+    private static int itemNum = 0;
+    private static ArrayBlockingQueue<ProxyData> proxies = new ArrayBlockingQueue<>(10);
+    private class ProxyData {
+        @SerializedName("host")
+        public String host;
+        @SerializedName("port")
+        public String port;
+    }
+
+
+    private static String getHtml(String url) throws IOException, InterruptedException {
+        Request request = new Request.Builder().url(url).build();
+
+        while (true) {
+            if (proxies.size() == 0) {
+                getProxy();
+            }
+
+            ProxyData p = proxies.take();
+            Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(p.host, Integer.parseInt(p.port)));
+            OkHttpClient client = new OkHttpClient.Builder().proxy(proxy).addInterceptor(new UnzippingInterceptor()).build();
+
+            try {
+                Response response = client.newCall(request).execute();
+                if (!response.isSuccessful()) {
+                    continue;
+                }
+
+                return Objects.requireNonNull(response.body()).string();
+
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+
+    private static void getProxy() throws IOException, InterruptedException {
+        String url = "https://proxy.horocn.com/api/proxies?order_id=OVX51634060401447250&num=20&format=json&line_separator=win&can_repeat=no&loc_name=%E4%B8%AD%E5%9B%BD";
+        OkHttpClient client = new OkHttpClient();
+        Request request = new Request.Builder().url(url).build();
+        Response response = client.newCall(request).execute();
+
+        while (!response.isSuccessful()) {
+            response = client.newCall(request).execute();
+        }
+
+        Gson gson = new Gson();
+        ProxyData[] ps = gson.fromJson(Objects.requireNonNull(response.body()).string(), ProxyData[].class);
+
+        for (ProxyData p :
+                ps) {
+            proxies.put(p);
+           }
+    }
 
 
     private static void getData(String url, String id) throws Exception {
         DoubanData data = new DoubanData();
-        Connection conn = Jsoup.connect(url);
-        Document document = null;
 
-        document = conn.get();
+        String html = getHtml(url);
+        Document document = Jsoup.parse(html);
 
 //初始化基本数据
         data.bookname = document.select("div#wrapper > h1 > span").text();
@@ -605,37 +695,39 @@ public class Main {
     }
 
     public static void main(String[] rags) {
-        // try {
-        //  wirteIntoExcel(new DoubanData());
-        String url = "https://book.douban.com/subject/1562932/";
         try {
-            SaveInfoData data = Utils.getSaveInfo();
-            excelNum = data.pageNum;
-            itemNum = data.itemNum;
-            Random random = new Random();
-            List<DoubanUrlData> datas = Utils.getDoubanUrls();
-            for (int i=itemNum;i<datas.size();i++) {
-                DoubanUrlData doubanUrlData=datas.get(i);
-                if(!isTextEmpty(doubanUrlData.url.trim())){
-                System.out.println("开始抓取:" + itemNum);
-                System.out.println("开始抓取:" + doubanUrlData.url);
-                Thread.sleep(2 + 1 * random.nextInt(3));
-                getData(doubanUrlData.url, doubanUrlData.ID);
-                System.out.println("结束抓取:" + itemNum);}else{
-                    itemNum++;
-                    System.out.println("url为空的" + itemNum);
-                }
-            }
-//            File excelFile = new File("D:/other/douban_read_info/douban_read_" + 1 + ".xls");
-//            initExcel(excelFile);
+            OkHttpClient client = new OkHttpClient.Builder().connectTimeout(Duration.of(5, ChronoUnit.SECONDS)).build();
+            Request request = new Request.Builder().url("http://localhost:8080").build();
+
+            Response response = client.newCall(request).execute();
+            System.out.println(response.body().string());
         } catch (Exception e) {
             e.printStackTrace();
-            Utils.saveErrorUrl(url);
         }
 
-//        } catch (Exception ex) {
-//            System.out.println(ex.getMessage());
-//        }
 
+//        String url = "https://book.douban.com/subject/1562932/";
+//        try {
+//            SaveInfoData data = Utils.getSaveInfo();
+//            excelNum = data.pageNum;
+//            itemNum = data.itemNum;
+//            Random random = new Random();
+//            List<DoubanUrlData> datas = Utils.getDoubanUrls();
+//            for (int i=itemNum;i<datas.size();i++) {
+//                DoubanUrlData doubanUrlData=datas.get(i);
+//                if(!isTextEmpty(doubanUrlData.url.trim())){
+//                System.out.println("开始抓取:" + itemNum);
+//                System.out.println("开始抓取:" + doubanUrlData.url);
+//                Thread.sleep(2 + 1 * random.nextInt(3));
+//                getData(doubanUrlData.url, doubanUrlData.ID);
+//                System.out.println("结束抓取:" + itemNum);}else{
+//                    itemNum++;
+//                    System.out.println("url为空的" + itemNum);
+//                }
+//            }
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            Utils.saveErrorUrl(url);
+//        }
     }
 }
