@@ -4,6 +4,8 @@ import data.DoubanData;
 import data.DoubanUrlData;
 import data.SaveInfoData;
 import data.WhereBuyData;
+import data.proxydata.ProxyDataItem;
+import data.proxydata.ProxyDataResponse;
 import okhttp3.*;
 import okhttp3.internal.http.RealResponseBody;
 import okio.GzipSource;
@@ -66,14 +68,14 @@ public class Main {
     private static int rowNum = 0;
     private static int itemNum = 0;
     private static Proxy proxy = null;
-    private static ArrayBlockingQueue<ProxyData> proxies = new ArrayBlockingQueue<>(10);
+    private static ArrayBlockingQueue<ProxyDataItem> proxies = new ArrayBlockingQueue<>(5);
 
-    private static class ProxyData {
-        @SerializedName("host")
-        public String host;
-        @SerializedName("port")
-        public String port;
-    }
+//    private static class ProxyData {
+//        @SerializedName("host")
+//        public String host;
+//        @SerializedName("port")
+//        public String port;
+//    }
 
     private static final OkHttpClient.Builder builder = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -88,8 +90,8 @@ public class Main {
         while (true) {
             System.out.println("进入获取html");
             if (proxy == null) {
-                ProxyData data = takeProxy();
-                proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(data.host, Integer.parseInt(data.port)));
+                ProxyDataItem data = takeProxy();
+                proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(data.ip, Integer.parseInt(data.port)));
             }
             if (client == null) {
                 client = builder.proxy(proxy).build();
@@ -114,7 +116,7 @@ public class Main {
         }
     }
 
-    private static ProxyData takeProxy() throws IOException, InterruptedException {
+    private static ProxyDataItem takeProxy() throws IOException, InterruptedException {
         if (proxies.size() == 0) {
             getProxy();
         }
@@ -124,7 +126,7 @@ public class Main {
 
 
     private static void getProxy() throws IOException, InterruptedException {
-        String url = "https://proxy.horocn.com/api/proxies?order_id=OVX51634060401447250&num=20&format=json&line_separator=win&can_repeat=no&loc_name=%E4%B8%AD%E5%9B%BD";
+        String url = "http://www.zdopen.com/ShortProxy/GetIP/?api=201905242211089237&akey=190022e61c4b2fc4&order=2&type=3";
         OkHttpClient client = new OkHttpClient.Builder().build();
 
         Request request = new Request.Builder().url(url).build();
@@ -135,10 +137,10 @@ public class Main {
         }
 
         Gson gson = new Gson();
-        ProxyData[] ps = gson.fromJson(Objects.requireNonNull(response.body()).string(), ProxyData[].class);
+        ProxyDataResponse ps = gson.fromJson(Objects.requireNonNull(response.body()).string(), ProxyDataResponse.class);
 
-        for (ProxyData p :
-                ps) {
+        for (ProxyDataItem p :
+                ps.data.proxy_list) {
             proxies.put(p);
         }
     }
