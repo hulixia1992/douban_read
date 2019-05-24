@@ -115,7 +115,7 @@ public class Main {
     }
 
     private static ProxyData takeProxy() throws IOException, InterruptedException {
-        if (proxies.size() == 0 ) {
+        if (proxies.size() == 0) {
             getProxy();
         }
 
@@ -322,7 +322,8 @@ public class Main {
             workbook.write(out);//保存Excel文件
         }
         rowNum = getExcelLineNum(excelFile);
-        if (getExcelLineNum(excelFile) == 0) {//新输入数据
+        System.out.println("获取行数:" + rowNum);
+        if (rowNum == 0) {//新输入数据
             //
             rowNum = 0;
             itemNum = 0;
@@ -343,12 +344,14 @@ public class Main {
 
     }
 
-    private static void insertData(File excelFile, DoubanData data, HSSFWorkbook wb) throws IOException {
+    private static void insertData(File excelFile, DoubanData data, HSSFWorkbook wb) throws Exception {
         if (wb == null) {
             throw new IOException("hssfworkbook是空的");
         }
         HSSFSheet sheet = wb.getSheet("book_info");
+        rowNum+=1;
         HSSFRow row = sheet.createRow(rowNum);//
+        System.out.println("新建行数::" + rowNum);
         int buySize = data.whereBuyData.size();
         for (int i = 0; i < buySize; i++) {
             HSSFRow newRows = sheet.createRow(rowNum + i);
@@ -569,7 +572,9 @@ public class Main {
             sheet.addMergedRegion(region);
         }
 
-        rowNum += buySize;
+        //  rowNum += buySize;
+        rowNum = getExcelLineNum(excelFile);
+        System.out.println("当前行数:" + rowNum);
         OutputStream outputStream = new FileOutputStream(excelFile);
         wb.write(outputStream);
         outputStream.close();
@@ -728,7 +733,7 @@ public class Main {
         Workbook workbook = new HSSFWorkbook(is);
         Sheet sheet = workbook.getSheetAt(0);
         // 得到所有的行数
-        return sheet.getPhysicalNumberOfRows();
+        return sheet.getLastRowNum();
     }
 
     private static void startToGetData() throws Exception {
@@ -757,6 +762,7 @@ public class Main {
         System.out.println("开始新的一页:" + excelNum);
         excelNum++;
         itemNum = 0;
+        rowNum = 0;
         Utils.saveIndexInfo(excelNum, itemNum);
         startToGetData();
 
