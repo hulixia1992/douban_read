@@ -80,6 +80,7 @@ public class Main {
 
     private static ProxyData lastProxyData = new ProxyData();
     private static OkHttpClient client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
+    private static OkHttpClient getProxyClient = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
 
     private static String getHtml(String url) throws IOException, InterruptedException {
         Request request = new Request.Builder().url(url).build();
@@ -94,13 +95,16 @@ public class Main {
                 System.out.println("重新设置新的client");
                 Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyData.host, Integer.parseInt(proxyData.port)));
                 //  OkHttpClient client = new OkHttpClient.Builder().proxy(proxy).connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
-               client = client.newBuilder().proxy(proxy).connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
-
+                client = client.newBuilder().proxy(proxy).connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
+                Thread.sleep(1000);
 
             }
             try {
                 Response response = client.newCall(request).execute();
                 if (!response.isSuccessful()) {
+                    if (proxies.size() == 0) {
+                        getProxy();
+                    }
                     proxyData = proxies.take();
                     continue;
                 }
@@ -108,6 +112,10 @@ public class Main {
                 return Objects.requireNonNull(response.body()).string();
 
             } catch (Exception ignored) {
+                if (proxies.size() == 0) {
+                    getProxy();
+                }
+                proxyData = proxies.take();
                 System.out.println(ignored.getMessage());
             }
         }
@@ -119,10 +127,10 @@ public class Main {
         // OkHttpClient client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).build();
 
         Request request = new Request.Builder().url(url).build();
-        Response response = client.newCall(request).execute();
+        Response response = getProxyClient.newCall(request).execute();
         System.out.println("重新获取代理ip");
         while (!response.isSuccessful()) {
-            response = client.newCall(request).execute();
+            response = getProxyClient.newCall(request).execute();
         }
 
         Gson gson = new Gson();
@@ -139,7 +147,7 @@ public class Main {
         DoubanData data = new DoubanData();
 
         String html = getHtml(url);
-       Document document = Jsoup.parse(html);
+        Document document = Jsoup.parse(html);
 //        Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyData.host, Integer.parseInt(proxyData.port)));
 //        Document document  = Jsoup.connect(url)
 //                .proxy(proxy)
