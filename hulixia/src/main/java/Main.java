@@ -20,12 +20,9 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
-import javax.net.ssl.HttpsURLConnection;
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.Random;
@@ -68,7 +65,7 @@ public class Main {
     private static int excelNum = 1;
     private static int rowNum = 0;
     private static int itemNum = 0;
-    private static ProxyData proxyData;
+    private static Proxy proxy = null;
     private static ArrayBlockingQueue<ProxyData> proxies = new ArrayBlockingQueue<>(10);
 
     private static class ProxyData {
@@ -78,59 +75,63 @@ public class Main {
         public String port;
     }
 
-    private static ProxyData lastProxyData = new ProxyData();
-    private static OkHttpClient client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
-    private static OkHttpClient getProxyClient = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
+    private static final OkHttpClient.Builder builder = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .addInterceptor(new UnzippingInterceptor())
+            .followRedirects(false)
+            .followSslRedirects(false);
+    private static OkHttpClient client = null;
 
     private static String getHtml(String url) throws IOException, InterruptedException {
         Request request = new Request.Builder().url(url).build();
 
         while (true) {
-            if (proxies.size() == 0) {
-                getProxy();
-            }
             System.out.println("进入获取html");
-            if (lastProxyData != proxyData) {
-                lastProxyData = proxyData;
-                System.out.println("重新设置新的client");
-                Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyData.host, Integer.parseInt(proxyData.port)));
-                //  OkHttpClient client = new OkHttpClient.Builder().proxy(proxy).connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
-                client = client.newBuilder().proxy(proxy).connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
-                Thread.sleep(1000);
-
+            if (proxy == null) {
+                ProxyData data = takeProxy();
+                proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(data.host, Integer.parseInt(data.port)));
             }
+            if (client == null) {
+                client = builder.proxy(proxy).build();
+            }
+
+
             try {
                 Response response = client.newCall(request).execute();
                 if (!response.isSuccessful()) {
-                    if (proxies.size() == 0) {
-                        getProxy();
-                    }
-                    proxyData = proxies.take();
+                    proxy = null;
+                    client = null;
                     continue;
                 }
 
                 return Objects.requireNonNull(response.body()).string();
 
             } catch (Exception ignored) {
-                if (proxies.size() == 0) {
-                    getProxy();
-                }
-                proxyData = proxies.take();
                 System.out.println(ignored.getMessage());
+                proxy = null;
+                client = null;
             }
         }
+    }
+
+    private static ProxyData takeProxy() throws IOException, InterruptedException {
+        if (proxies.size() == 0 ) {
+            getProxy();
+        }
+
+        return proxies.take();
     }
 
 
     private static void getProxy() throws IOException, InterruptedException {
         String url = "https://proxy.horocn.com/api/proxies?order_id=OVX51634060401447250&num=20&format=json&line_separator=win&can_repeat=no&loc_name=%E4%B8%AD%E5%9B%BD";
-        // OkHttpClient client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).build();
+        OkHttpClient client = new OkHttpClient.Builder().build();
 
         Request request = new Request.Builder().url(url).build();
-        Response response = getProxyClient.newCall(request).execute();
+        Response response = client.newCall(request).execute();
         System.out.println("重新获取代理ip");
         while (!response.isSuccessful()) {
-            response = getProxyClient.newCall(request).execute();
+            response = client.newCall(request).execute();
         }
 
         Gson gson = new Gson();
@@ -211,14 +212,8 @@ public class Main {
                 }
 
             }
-        } else {//IP不能用换IP使用
-            if (proxies.size() == 0) {
-                getProxy();
-            }
-            proxyData = proxies.take();
-            getData(url, id);
-            return;
         }
+
         //#link-report > span.short > div
         data.contentIntro = String.join(System.lineSeparator(), document.select("#link-report > div > div.intro").select("p").eachText());
         if (document.select("#link-report > span.all.hidden > div > div") != null) {
@@ -775,10 +770,6 @@ public class Main {
             SaveInfoData data = Utils.getSaveInfo();
             excelNum = data.pageNum;
             itemNum = data.itemNum;
-            if (proxies.size() == 0) {
-                getProxy();
-            }
-            proxyData = proxies.take();
 
             startToGetData();
         } catch (Exception e) {
