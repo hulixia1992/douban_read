@@ -9,9 +9,18 @@ import java.util.Properties;
 public class Utils {
     private static String INFO_FAIL_PATH = "D:/other/douban_index_info.txt";
     private static String ERROR_URL_FILE = "D:/other/error_url.txt";
-    private static String DOUBAN_URL_PATH = "D:/other/douban_url/1.txt";
+    //   private static String SAVE_EXCEL_FILE = "D:/other/error_url.txt";
+
     private static String PAGE_NUM = "page_num";
     private static String ITEM_NUM = "item_num";
+
+    private static String getUrlFilePath(int pageNum) {
+        return "D:/other/douban_url/" + pageNum + ".txt";
+    }
+
+    public static String getExcelFile(int pageNum) {
+        return "D:/other/douban_read_info/" + pageNum + ".xls";
+    }
 
     public static void saveIndexInfo(int pageNum, int itemNum) throws IOException {
         //创建properties集合
@@ -67,9 +76,9 @@ public class Utils {
         }
     }
 
-    public static List<DoubanUrlData> getDoubanUrls() throws IOException {
+    public static List<DoubanUrlData> getDoubanUrls(int pageNum) throws IOException {
         List<DoubanUrlData> urldatas = new ArrayList<>();
-        File urlFile = new File(DOUBAN_URL_PATH);
+        File urlFile = new File(getUrlFilePath(pageNum));
         StringBuilder result = new StringBuilder();
         BufferedReader br = new BufferedReader(new FileReader(urlFile));//构造一个BufferedReader类来读取文件
         String s = "";

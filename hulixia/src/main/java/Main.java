@@ -1,6 +1,8 @@
 import com.google.gson.Gson;
 import com.google.gson.annotations.SerializedName;
 import data.DoubanData;
+import data.DoubanUrlData;
+import data.SaveInfoData;
 import data.WhereBuyData;
 import okhttp3.*;
 import okhttp3.internal.http.RealResponseBody;
@@ -18,13 +20,17 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
+import javax.net.ssl.HttpsURLConnection;
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Objects;
+import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 class UnzippingInterceptor implements Interceptor {
 
@@ -62,14 +68,18 @@ public class Main {
     private static int excelNum = 1;
     private static int rowNum = 0;
     private static int itemNum = 0;
+    private static ProxyData proxyData;
     private static ArrayBlockingQueue<ProxyData> proxies = new ArrayBlockingQueue<>(10);
-    private class ProxyData {
+
+    private static class ProxyData {
         @SerializedName("host")
         public String host;
         @SerializedName("port")
         public String port;
     }
 
+    private static ProxyData lastProxyData = new ProxyData();
+    private static OkHttpClient client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
 
     private static String getHtml(String url) throws IOException, InterruptedException {
         Request request = new Request.Builder().url(url).build();
@@ -78,20 +88,27 @@ public class Main {
             if (proxies.size() == 0) {
                 getProxy();
             }
+            System.out.println("进入获取html");
+            if (lastProxyData != proxyData) {
+                lastProxyData = proxyData;
+                System.out.println("重新设置新的client");
+                Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyData.host, Integer.parseInt(proxyData.port)));
+                //  OkHttpClient client = new OkHttpClient.Builder().proxy(proxy).connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
+               client = client.newBuilder().proxy(proxy).connectTimeout(30, TimeUnit.SECONDS).addInterceptor(new UnzippingInterceptor()).build();
 
-            ProxyData p = proxies.take();
-            Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(p.host, Integer.parseInt(p.port)));
-            OkHttpClient client = new OkHttpClient.Builder().proxy(proxy).addInterceptor(new UnzippingInterceptor()).build();
 
+            }
             try {
                 Response response = client.newCall(request).execute();
                 if (!response.isSuccessful()) {
+                    proxyData = proxies.take();
                     continue;
                 }
 
                 return Objects.requireNonNull(response.body()).string();
 
             } catch (Exception ignored) {
+                System.out.println(ignored.getMessage());
             }
         }
     }
@@ -99,10 +116,11 @@ public class Main {
 
     private static void getProxy() throws IOException, InterruptedException {
         String url = "https://proxy.horocn.com/api/proxies?order_id=OVX51634060401447250&num=20&format=json&line_separator=win&can_repeat=no&loc_name=%E4%B8%AD%E5%9B%BD";
-        OkHttpClient client = new OkHttpClient();
+        // OkHttpClient client = new OkHttpClient.Builder().connectTimeout(30, TimeUnit.SECONDS).build();
+
         Request request = new Request.Builder().url(url).build();
         Response response = client.newCall(request).execute();
-
+        System.out.println("重新获取代理ip");
         while (!response.isSuccessful()) {
             response = client.newCall(request).execute();
         }
@@ -113,7 +131,7 @@ public class Main {
         for (ProxyData p :
                 ps) {
             proxies.put(p);
-           }
+        }
     }
 
 
@@ -121,62 +139,77 @@ public class Main {
         DoubanData data = new DoubanData();
 
         String html = getHtml(url);
-        Document document = Jsoup.parse(html);
+       Document document = Jsoup.parse(html);
+//        Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyData.host, Integer.parseInt(proxyData.port)));
+//        Document document  = Jsoup.connect(url)
+//                .proxy(proxy)
+//                .timeout(0)
+//                .get();
 
 //初始化基本数据
         data.bookname = document.select("div#wrapper > h1 > span").text();
         System.out.println(data.bookname);
-
+        System.out.println("进入抓取方法");
         data.author = document.select("#info > span:nth-child(1) > a").text();
-        Elements infoEle = document.select("#info").get(0).children();
-       // if()
-        for (Element element : infoEle) {
-            if (element.text().contains("出版社")) {
-                data.publish = element.nextSibling().outerHtml();
+        if (document.select("#info").size() > 0) {
+            Elements infoEle = document.select("#info").get(0).children();
+            // if()
 
-            } else if (element.text().contains("副标题")) {
-                data.subTitle = element.nextSibling().outerHtml();
+            for (Element element : infoEle) {
+                if (element.text().contains("出版社")) {
+                    data.publish = element.nextSibling().outerHtml();
 
-            } else if (element.text().contains("原作名")) {
-                data.oriAuthor = element.nextSibling().outerHtml();
+                } else if (element.text().contains("副标题")) {
+                    data.subTitle = element.nextSibling().outerHtml();
 
-            } else if (element.text().contains("出品方")) {
-                data.producer = element.nextSibling().outerHtml();
-                if (data.producer.equals("&nbsp;")) {
-                    data.producer = element.nextElementSibling().text();
+                } else if (element.text().contains("原作名")) {
+                    data.oriAuthor = element.nextSibling().outerHtml();
+
+                } else if (element.text().contains("出品方")) {
+                    data.producer = element.nextSibling().outerHtml();
+                    if (data.producer.equals("&nbsp;")) {
+                        data.producer = element.nextElementSibling().text();
+                    }
+
+                } else if (element.text().contains("出版年")) {
+                    data.publishTime = element.nextSibling().outerHtml();
+
+                } else if (element.text().contains("页数")) {
+                    data.pageNumber = element.nextSibling().outerHtml();
+
+                } else if (element.text().contains("定价")) {
+                    data.price = element.nextSibling().outerHtml();
+
+                } else if (element.text().contains("装帧")) {
+                    data.binging = element.nextSibling().outerHtml();
+
+                } else if (element.text().contains("丛书")) {
+                    data.seriesOfBook = element.nextSibling().outerHtml();
+                    if (data.seriesOfBook.equals("&nbsp;")) {
+                        data.seriesOfBook = element.nextElementSibling().text();
+                    }
+
+                } else if (element.text().contains("ISBN")) {
+                    data.ISBN = element.nextSibling().outerHtml();
+
+                } else if (element.text().contains("原作名")) {
+                    data.oriBookname = element.nextSibling().outerHtml();
+
+                } else if (element.children().size() > 0) {
+                    if (element.children().get(0).text().contains("译者")) {
+                        data.translator = element.children().get(1).text();
+                        System.out.println(data.translator);
+                    }
                 }
 
-            } else if (element.text().contains("出版年")) {
-                data.publishTime = element.nextSibling().outerHtml();
-
-            } else if (element.text().contains("页数")) {
-                data.pageNumber = element.nextSibling().outerHtml();
-
-            } else if (element.text().contains("定价")) {
-                data.price = element.nextSibling().outerHtml();
-
-            } else if (element.text().contains("装帧")) {
-                data.binging = element.nextSibling().outerHtml();
-
-            } else if (element.text().contains("丛书")) {
-                data.seriesOfBook = element.nextSibling().outerHtml();
-                if (data.seriesOfBook.equals("&nbsp;")) {
-                    data.seriesOfBook = element.nextElementSibling().text();
-                }
-
-            } else if (element.text().contains("ISBN")) {
-                data.ISBN = element.nextSibling().outerHtml();
-
-            } else if (element.text().contains("原作名")) {
-                data.oriBookname = element.nextSibling().outerHtml();
-
-            } else if (element.children().size() > 0) {
-                if (element.children().get(0).text().contains("译者")) {
-                    data.translator = element.children().get(1).text();
-                    System.out.println(data.translator);
-                }
             }
-
+        } else {//IP不能用换IP使用
+            if (proxies.size() == 0) {
+                getProxy();
+            }
+            proxyData = proxies.take();
+            getData(url, id);
+            return;
         }
         //#link-report > span.short > div
         data.contentIntro = String.join(System.lineSeparator(), document.select("#link-report > div > div.intro").select("p").eachText());
@@ -276,7 +309,7 @@ public class Main {
     }
 
     public static void wirteIntoExcel(DoubanData data) throws Exception {
-        File excelFile = new File("D:/other/douban_read_info/douban_read_" + excelNum + ".xls");
+        File excelFile = new File(Utils.getExcelFile(excelNum));
         if (!excelFile.exists()) {
 
             HSSFWorkbook workbook = new HSSFWorkbook();//创建Excel文件(Workbook)
@@ -291,13 +324,14 @@ public class Main {
             rowNum = 0;
             itemNum = 0;
             initExcel(excelFile);
-        } else if (itemNum == 500) {
-            excelNum++;
-            rowNum = 0;
-            itemNum = 0;
-            excelFile = new File("D:/other/douban_read_info/douban_read_" + excelNum + ".xlsx");
-            initExcel(excelFile);
         }
+//        else if (itemNum == 500) {
+//            excelNum++;
+//            rowNum = 0;
+//            itemNum = 0;
+//            excelFile = new File("D:/other/douban_read_info/douban_read_" + excelNum + ".xlsx");
+//            initExcel(excelFile);
+//        }
         //  rowNum++;
         itemNum++;
         Utils.saveIndexInfo(excelNum, itemNum);
@@ -694,40 +728,56 @@ public class Main {
         return sheet.getPhysicalNumberOfRows();
     }
 
-    public static void main(String[] rags) {
-        try {
-            OkHttpClient client = new OkHttpClient.Builder().connectTimeout(Duration.of(5, ChronoUnit.SECONDS)).build();
-            Request request = new Request.Builder().url("http://localhost:8080").build();
-
-            Response response = client.newCall(request).execute();
-            System.out.println(response.body().string());
-        } catch (Exception e) {
-            e.printStackTrace();
+    private static void startToGetData() throws Exception {
+        Random random = new Random();
+        List<DoubanUrlData> datas = Utils.getDoubanUrls(excelNum);
+        if (itemNum == 0) {//新建一个
+            System.out.println("新建一个excel");
+            File excelFile = new File(Utils.getExcelFile(excelNum));
+            initExcel(excelFile);
         }
+        for (int i = itemNum; i < datas.size(); i++) {
 
+            DoubanUrlData doubanUrlData = datas.get(i);
+            if (!isTextEmpty(doubanUrlData.url.trim())) {
+                System.out.println("开始抓取:" + itemNum);
+                System.out.println("开始抓取:" + doubanUrlData.url);
+                errorUrl = doubanUrlData.url;
+                Thread.sleep(2 + 1 * random.nextInt(3));
+                getData(doubanUrlData.url, doubanUrlData.ID);
+                System.out.println("结束抓取:" + itemNum);
+            } else {
+                itemNum++;
+                System.out.println("url为空的" + itemNum);
+            }
+        }   //重新开始
+        System.out.println("开始新的一页:" + excelNum);
+        excelNum++;
+        itemNum = 0;
+        Utils.saveIndexInfo(excelNum, itemNum);
+        startToGetData();
 
-//        String url = "https://book.douban.com/subject/1562932/";
-//        try {
-//            SaveInfoData data = Utils.getSaveInfo();
-//            excelNum = data.pageNum;
-//            itemNum = data.itemNum;
-//            Random random = new Random();
-//            List<DoubanUrlData> datas = Utils.getDoubanUrls();
-//            for (int i=itemNum;i<datas.size();i++) {
-//                DoubanUrlData doubanUrlData=datas.get(i);
-//                if(!isTextEmpty(doubanUrlData.url.trim())){
-//                System.out.println("开始抓取:" + itemNum);
-//                System.out.println("开始抓取:" + doubanUrlData.url);
-//                Thread.sleep(2 + 1 * random.nextInt(3));
-//                getData(doubanUrlData.url, doubanUrlData.ID);
-//                System.out.println("结束抓取:" + itemNum);}else{
-//                    itemNum++;
-//                    System.out.println("url为空的" + itemNum);
-//                }
-//            }
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//            Utils.saveErrorUrl(url);
-//        }
+    }
+
+    private static String errorUrl = "";
+
+    public static void main(String[] rags) {
+
+        try {
+            SaveInfoData data = Utils.getSaveInfo();
+            excelNum = data.pageNum;
+            itemNum = data.itemNum;
+            if (proxies.size() == 0) {
+                getProxy();
+            }
+            proxyData = proxies.take();
+
+            startToGetData();
+        } catch (Exception e) {
+            System.out.println("有异常:" + e.getMessage());
+            itemNum++;
+            e.printStackTrace();
+            Utils.saveErrorUrl(errorUrl);
+        }
     }
 }
