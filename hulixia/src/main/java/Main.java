@@ -1,7 +1,5 @@
 import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
 import data.DoubanData;
-import data.DoubanUrlData;
 import data.SaveInfoData;
 import data.WhereBuyData;
 import data.proxydata.ProxyDataItem;
@@ -25,11 +23,12 @@ import org.jsoup.select.Elements;
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
-import java.util.List;
 import java.util.Objects;
-import java.util.Random;
+import java.util.Scanner;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 class UnzippingInterceptor implements Interceptor {
 
@@ -98,18 +97,23 @@ public class Main {
             }
 
 
-            try {
-                Response response = client.newCall(request).execute();
+            try (Response response = client.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
+                    if (response.code() == 404) {
+                        return "";
+                    }
                     proxy = null;
                     client = null;
+                    System.out.println("获取html失败:" + response.body());
+
                     continue;
                 }
+                ResponseBody responseBody = response.body();
 
-                return Objects.requireNonNull(response.body()).string();
+                return Objects.requireNonNull(responseBody).string();
 
-            } catch (Exception ignored) {
-                System.out.println(ignored.getMessage());
+            } catch (Exception e) {
+                System.out.println(e.getMessage());
                 proxy = null;
                 client = null;
             }
@@ -117,7 +121,7 @@ public class Main {
     }
 
     private static ProxyDataItem takeProxy() throws IOException, InterruptedException {
-        if (proxies.size() == 0) {
+        while (proxies.size() == 0) {
             getProxy();
         }
 
@@ -130,26 +134,41 @@ public class Main {
         OkHttpClient client = new OkHttpClient.Builder().build();
 
         Request request = new Request.Builder().url(url).build();
-        Response response = client.newCall(request).execute();
-        System.out.println("重新获取代理ip");
-        while (!response.isSuccessful()) {
-            response = client.newCall(request).execute();
+        ProxyDataResponse pd = null;
+
+        while (true) {
+            Response response = client.newCall(request).execute();
+            if (!response.isSuccessful()) {
+                System.out.println("代理API请求失败：" + response.code());
+                Thread.sleep(10 * 1000);
+                continue;
+            }
+
+            Gson gson = new Gson();
+            pd = gson.fromJson(Objects.requireNonNull(response.body()).string(), ProxyDataResponse.class);
+            if (!pd.code.equals("10001")) {
+                System.out.println("代理API返回码错误：" + pd.code);
+                Thread.sleep(10 * 1000);
+                continue;
+            }
+
+            break;
         }
 
-        Gson gson = new Gson();
-        ProxyDataResponse ps = gson.fromJson(Objects.requireNonNull(response.body()).string(), ProxyDataResponse.class);
-
         for (ProxyDataItem p :
-                ps.data.proxy_list) {
+                pd.data.proxy_list) {
             proxies.put(p);
         }
     }
 
 
-    private static void getData(String url, String id) throws Exception {
+    private static DoubanData getData(String url, String id) throws Exception {
         DoubanData data = new DoubanData();
 
         String html = getHtml(url);
+        if(isTextEmpty(html)){
+            return new DoubanData();
+        }
         Document document = Jsoup.parse(html);
 //        Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyData.host, Integer.parseInt(proxyData.port)));
 //        Document document  = Jsoup.connect(url)
@@ -291,46 +310,48 @@ public class Main {
         //初始化推介
         if (document.select("#db-rec-section > div").size() > 0) {
             Elements promotionEles = document.select("#db-rec-section > div").get(0).children();
-            String promotion = "";
+            StringBuilder promotion = new StringBuilder();
             for (Element element : promotionEles) {
                 if (element.children().size() == 2) {
-                    promotion += element.children().get(1).text() + ",";
+                    promotion.append(element.children().get(1).text()).append(",");
                 }
             }
             if (promotion.length() > 1) {
                 data.promotion = promotion.substring(0, promotion.length() - 1);
             } else {
-                data.promotion = promotion;
+                data.promotion = promotion.toString();
             }
         }
 
-        wirteIntoExcel(data);
+//        wirteIntoExcel(data);
 
         System.out.println(data.readingNum + ":" + data.readedNum + ":" + data.wantReadNum);
+
+        return data;
     }
 
     private static boolean isTextEmpty(String content) {
         return content == null || content.equals("");
     }
 
-    public static void wirteIntoExcel(DoubanData data) throws Exception {
-        File excelFile = new File(Utils.getExcelFile(excelNum));
-        if (!excelFile.exists()) {
-
-            HSSFWorkbook workbook = new HSSFWorkbook();//创建Excel文件(Workbook)
-            HSSFSheet sheet = workbook.createSheet();//创建工作表(Sheet)
-            sheet = workbook.createSheet("Test");//创建工作表(Sheet)
-            FileOutputStream out = new FileOutputStream(excelFile);
-            workbook.write(out);//保存Excel文件
-        }
-        rowNum = getExcelLineNum(excelFile);
+    private static void wirteIntoExcel(File file, DoubanData data) throws Exception {
+//        File excelFile = new File(Utils.getExcelFile(excelNum));
+//        if (!excelFile.exists()) {
+//
+//            HSSFWorkbook workbook = new HSSFWorkbook();//创建Excel文件(Workbook)
+//            HSSFSheet sheet = workbook.createSheet();//创建工作表(Sheet)
+//            sheet = workbook.createSheet("Test");//创建工作表(Sheet)
+//            FileOutputStream out = new FileOutputStream(excelFile);
+//            workbook.write(out);//保存Excel文件
+//        }
+//        rowNum = getExcelLineNum(excelFile);
         System.out.println("获取行数:" + rowNum);
-        if (rowNum == 0) {//新输入数据
-            //
-            rowNum = 0;
-            itemNum = 0;
-            initExcel(excelFile);
-        }
+//        if (rowNum == 0) {//新输入数据
+//            //
+//            rowNum = 0;
+//            itemNum = 0;
+//            initExcel(excelFile);
+//        }
 //        else if (itemNum == 500) {
 //            excelNum++;
 //            rowNum = 0;
@@ -339,19 +360,24 @@ public class Main {
 //            initExcel(excelFile);
 //        }
         //  rowNum++;
-        itemNum++;
+//        itemNum++;
         Utils.saveIndexInfo(excelNum, itemNum);
-        insertData(excelFile, data, returnWorkBookGivenFileHandle(excelFile));
+        HSSFWorkbook wb = returnWorkBookGivenFileHandle(file);
+        insertData(data, wb);
 
-
+        rowNum = getExcelLineNum(file);
+        System.out.println("当前行数:" + rowNum);
+        OutputStream outputStream = new FileOutputStream(file);
+        wb.write(outputStream);
+        outputStream.close();
     }
 
-    private static void insertData(File excelFile, DoubanData data, HSSFWorkbook wb) throws Exception {
+    private static void insertData(DoubanData data, HSSFWorkbook wb) throws Exception {
         if (wb == null) {
             throw new IOException("hssfworkbook是空的");
         }
         HSSFSheet sheet = wb.getSheet("book_info");
-        rowNum+=1;
+        rowNum += 1;
         HSSFRow row = sheet.createRow(rowNum);//
         System.out.println("新建行数::" + rowNum);
         int buySize = data.whereBuyData.size();
@@ -575,11 +601,6 @@ public class Main {
         }
 
         //  rowNum += buySize;
-        rowNum = getExcelLineNum(excelFile);
-        System.out.println("当前行数:" + rowNum);
-        OutputStream outputStream = new FileOutputStream(excelFile);
-        wb.write(outputStream);
-        outputStream.close();
 
     }
 
@@ -598,6 +619,7 @@ public class Main {
                 wb = new HSSFWorkbook(fis);
             }
         } catch (Exception e) {
+            e.printStackTrace();
             return null;
         } finally {
             if (fis != null) {
@@ -738,39 +760,50 @@ public class Main {
         return sheet.getLastRowNum();
     }
 
-    private static void startToGetData() throws Exception {
-        Random random = new Random();
-        List<DoubanUrlData> datas = Utils.getDoubanUrls(excelNum);
-        if (itemNum == 0) {//新建一个
-            System.out.println("新建一个excel");
-            File excelFile = new File(Utils.getExcelFile(excelNum));
-            initExcel(excelFile);
-        }
-        for (int i = itemNum; i < datas.size(); i++) {
+    private static void startToGetData(File urlFile, File excelFile) throws Exception {
+        Scanner scanner = new Scanner(urlFile);
+        scanner.useDelimiter("\n");
 
-            DoubanUrlData doubanUrlData = datas.get(i);
-            if (!isTextEmpty(doubanUrlData.url.trim())) {
-                System.out.println("开始抓取:" + itemNum);
-                System.out.println("开始抓取:" + doubanUrlData.url);
-                errorUrl = doubanUrlData.url;
-                Thread.sleep(2 + 1 * random.nextInt(3));
-                getData(doubanUrlData.url, doubanUrlData.ID);
-                System.out.println("结束抓取:" + itemNum);
-            } else {
-                itemNum++;
-                System.out.println("url为空的" + itemNum);
+        int index = 0;
+        while (scanner.hasNext()) {
+            String line = scanner.next();
+            if (index < itemNum) {
+                index++;
+                continue;
             }
-        }   //重新开始
+            if (line.trim().isEmpty()) {
+                continue;
+            }
+            System.out.println("当前从"+index+"行开始打印");
+            String[] segs = line.split("=", 2);
+            if (segs.length != 2) {
+                continue;
+            }
+            String url = segs[1];
+            if (null == url || url.trim().length() == 0) {
+                continue;
+            }
+
+            System.out.println("Start fetch url: " + url);
+
+            Pattern pattern = Pattern.compile("[^0-9]");
+            Matcher matcher = pattern.matcher(url);
+            String id = matcher.replaceAll("");
+
+            DoubanData data = getData(url, id);
+
+            wirteIntoExcel(excelFile, data);
+            index++;
+            System.out.println("结束抓取: " + excelNum + ": " + itemNum);
+            itemNum++;
+        }
+
         System.out.println("开始新的一页:" + excelNum);
         excelNum++;
         itemNum = 0;
         rowNum = 0;
         Utils.saveIndexInfo(excelNum, itemNum);
-        startToGetData();
-
     }
-
-    private static String errorUrl = "";
 
     public static void main(String[] rags) {
 
@@ -779,11 +812,30 @@ public class Main {
             excelNum = data.pageNum;
             itemNum = data.itemNum;
 
-            startToGetData();
+            while (true) {
+                File excelFile = new File(Utils.getExcelFile(excelNum));
+                if (!excelFile.exists()) {
+                    System.out.println("新建一个excel: " + excelNum);
+
+                    initExcel(excelFile);
+                }
+
+                rowNum = getExcelLineNum(excelFile);
+                String filepath = Utils.getUrlFilePath(excelNum);
+                File file = new File(filepath);
+                if (!file.exists()) {
+                    break;
+                }
+
+                startToGetData(file, excelFile);
+            }
+
+
         } catch (Exception e) {
             System.out.println("有异常:" + e.getMessage());
             itemNum++;
             e.printStackTrace();
+            String errorUrl = "";
             Utils.saveErrorUrl(errorUrl);
         }
     }

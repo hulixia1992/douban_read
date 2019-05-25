@@ -14,7 +14,7 @@ public class Utils {
     private static String PAGE_NUM = "page_num";
     private static String ITEM_NUM = "item_num";
 
-    private static String getUrlFilePath(int pageNum) {
+    public static String getUrlFilePath(int pageNum) {
         return "D:/other/douban_url/" + pageNum + ".txt";
     }
 
