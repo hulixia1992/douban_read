@@ -8,6 +8,8 @@ import okhttp3.*;
 import okhttp3.internal.http.RealResponseBody;
 import okio.GzipSource;
 import okio.Okio;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVPrinter;
 import org.apache.poi.hssf.usermodel.HSSFCell;
 import org.apache.poi.hssf.usermodel.HSSFRow;
 import org.apache.poi.hssf.usermodel.HSSFSheet;
@@ -23,6 +25,11 @@ import org.jsoup.select.Elements;
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.OpenOption;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.Objects;
 import java.util.Scanner;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -33,10 +40,10 @@ import java.util.regex.Pattern;
 class UnzippingInterceptor implements Interceptor {
 
     @Override
+
     public Response intercept(Chain chain) throws IOException {
         Response response = chain.proceed(chain.request());
         return unzip(response);
-
     }
 
     // copied from okhttp3.internal.http.HttpEngine (because is private)
@@ -68,13 +75,6 @@ public class Main {
     private static int itemNum = 0;
     private static Proxy proxy = null;
     private static ArrayBlockingQueue<ProxyDataItem> proxies = new ArrayBlockingQueue<>(5);
-
-//    private static class ProxyData {
-//        @SerializedName("host")
-//        public String host;
-//        @SerializedName("port")
-//        public String port;
-//    }
 
     private static final OkHttpClient.Builder builder = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -170,13 +170,6 @@ public class Main {
             return new DoubanData();
         }
         Document document = Jsoup.parse(html);
-//        Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyData.host, Integer.parseInt(proxyData.port)));
-//        Document document  = Jsoup.connect(url)
-//                .proxy(proxy)
-//                .timeout(0)
-//                .get();
-
-//初始化基本数据
         data.bookname = document.select("div#wrapper > h1 > span").text();
         System.out.println(data.bookname);
         System.out.println("进入抓取方法");
@@ -760,11 +753,13 @@ public class Main {
         return sheet.getLastRowNum();
     }
 
-    private static void startToGetData(File urlFile, File excelFile) throws Exception {
+    private static void startToGetData(File urlFile, CSVPrinter printer) throws Exception {
         Scanner scanner = new Scanner(urlFile);
         scanner.useDelimiter("\n");
 
         int index = 0;
+        Gson gson = new Gson();
+
         while (scanner.hasNext()) {
             String line = scanner.next();
             if (index < itemNum) {
@@ -792,51 +787,52 @@ public class Main {
 
             DoubanData data = getData(url, id);
 
-            wirteIntoExcel(excelFile, data);
+//            wirteIntoExcel(excelFile, data);
+
+            printer.printRecord(data.bookname, data.oriAuthor, data.subTitle, data.author, data.publish, data.publishTime,
+                    data.pageNumber, data.price, data.binging, data.seriesOfBook, data.authorInfo, data.ISBN, data.translator,
+                    data.contentIntro, data.directory, gson.toJson(data.tags), data.producer, gson.toJson(data.ratingData),
+                    gson.toJson(data.whereBuyData), data.promotion, data.readingNum, data.readedNum, data.wantReadNum);
             index++;
             System.out.println("结束抓取: " + excelNum + ": " + itemNum);
             itemNum++;
         }
-
-        System.out.println("开始新的一页:" + excelNum);
-        excelNum++;
-        itemNum = 0;
-        rowNum = 0;
-        Utils.saveIndexInfo(excelNum, itemNum);
     }
 
-    public static void main(String[] rags) {
+    public static void main(String[] rags) throws IOException {
+        SaveInfoData data = Utils.getSaveInfo();
+        excelNum = data.pageNum;
+        itemNum = data.itemNum;
 
-        try {
-            SaveInfoData data = Utils.getSaveInfo();
-            excelNum = data.pageNum;
-            itemNum = data.itemNum;
+        while (true) {
+            OpenOption[] options = new OpenOption[] {StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW, StandardOpenOption.APPEND};
+            BufferedWriter writer = Files.newBufferedWriter(Paths.get(Utils.getCSVFile(excelNum)), Charset.forName("UTF-8"), options);
+            CSVPrinter printer = new CSVPrinter(writer, CSVFormat.DEFAULT.withHeader(
+                    "书名", "原作者", "副标题", "作者", "出版社", "出版日期", "页数", "价格", "装帧", "丛书",
+                    "作者简介", "ISBN", "译者", "内容简介", "目录", "标签", "出品方", "评分", "在哪买",
+                    "相关推荐", "在读", "读过", "想读"
+            ));
 
-            while (true) {
-                File excelFile = new File(Utils.getExcelFile(excelNum));
-                if (!excelFile.exists()) {
-                    System.out.println("新建一个excel: " + excelNum);
-
-                    initExcel(excelFile);
-                }
-
-                rowNum = getExcelLineNum(excelFile);
+            try {
                 String filepath = Utils.getUrlFilePath(excelNum);
                 File file = new File(filepath);
                 if (!file.exists()) {
                     break;
                 }
 
-                startToGetData(file, excelFile);
+                startToGetData(file, printer);
+
+                System.out.println("开始新的一页:" + excelNum);
+                excelNum++;
+                itemNum = 0;
+
+            } catch (Exception e) {
+                e.printStackTrace();
+                Utils.saveIndexInfo(excelNum, itemNum);
+            } finally {
+                printer.close(true);
+                writer.close();
             }
-
-
-        } catch (Exception e) {
-            System.out.println("有异常:" + e.getMessage());
-            itemNum++;
-            e.printStackTrace();
-            String errorUrl = "";
-            Utils.saveErrorUrl(errorUrl);
         }
     }
 }

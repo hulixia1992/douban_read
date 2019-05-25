@@ -2,6 +2,7 @@ import data.DoubanUrlData;
 import data.SaveInfoData;
 
 import java.io.*;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
@@ -14,15 +15,19 @@ public class Utils {
     private static String PAGE_NUM = "page_num";
     private static String ITEM_NUM = "item_num";
 
-    public static String getUrlFilePath(int pageNum) {
+    static String getUrlFilePath(int pageNum) {
         return "D:/other/douban_url/" + pageNum + ".txt";
     }
 
-    public static String getExcelFile(int pageNum) {
+    static String getExcelFile(int pageNum) {
         return "D:/other/douban_read_info/" + pageNum + ".xls";
     }
 
-    public static void saveIndexInfo(int pageNum, int itemNum) throws IOException {
+    static String getCSVFile(int pageNum) {
+        return "D:/other/douban_read_info/" + pageNum + ".csv";
+    }
+
+    static void saveIndexInfo(int pageNum, int itemNum) throws IOException {
         //创建properties集合
         Properties prop = new Properties();
 
@@ -41,7 +46,7 @@ public class Utils {
 
     }
 
-    public static SaveInfoData getSaveInfo() throws IOException {
+    static SaveInfoData getSaveInfo() throws IOException {
         //调用load将文件里的数据读取
         Properties prop = new Properties();
         FileInputStream fis = new FileInputStream(INFO_FAIL_PATH);
@@ -52,31 +57,7 @@ public class Utils {
         return data;
     }
 
-    public static void saveErrorUrl(String url) {
-
-        BufferedWriter out = null;
-        try {
-            File errorFile = new File(ERROR_URL_FILE);
-            if (!errorFile.exists()) {
-                errorFile.createNewFile();
-            }
-            out = new BufferedWriter(new OutputStreamWriter(
-                    new FileOutputStream(errorFile, true)));
-            out.write(url + System.lineSeparator());
-        } catch (Exception e) {
-            e.printStackTrace();
-            System.out.println("保存错误文件出错:" + e.getMessage());
-        } finally {
-            try {
-                out.close();
-            } catch (IOException e) {
-                System.out.println("关闭错误文件流出错:" + e.getMessage());
-                e.printStackTrace();
-            }
-        }
-    }
-
-    public static List<DoubanUrlData> getDoubanUrls(int pageNum) throws IOException {
+    static List<DoubanUrlData> getDoubanUrls(int pageNum) throws IOException {
         List<DoubanUrlData> urldatas = new ArrayList<>();
         File urlFile = new File(getUrlFilePath(pageNum));
         StringBuilder result = new StringBuilder();
@@ -102,6 +83,30 @@ public class Utils {
             }
         }
         return urldatas;
+    }
+
+    static void saveErrorUrl(String url) {
+
+        BufferedWriter out = null;
+        try {
+            File errorFile = new File(ERROR_URL_FILE);
+            if (!errorFile.exists()) {
+                errorFile.createNewFile();
+            }
+            out = new BufferedWriter(new OutputStreamWriter(
+                    new FileOutputStream(errorFile, true)));
+            out.write(url + System.lineSeparator());
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("保存错误文件出错:" + e.getMessage());
+        } finally {
+            try {
+                out.close();
+            } catch (IOException e) {
+                System.out.println("关闭错误文件流出错:" + e.getMessage());
+                e.printStackTrace();
+            }
+        }
     }
 }
 
