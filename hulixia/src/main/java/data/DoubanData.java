@@ -47,4 +47,8 @@ DoubanData implements HtmlBean{
     @HtmlField(cssPath = "#collector > p:nth-child(7) > a")
     public String wantReadNum;
 
+    @Override
+    public String toString() {
+        return String.format("name: %s, price: %s, isbn: %s, author: %s", this.bookname, this.price, this.ISBN, this.author);
+    }
 }

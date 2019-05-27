@@ -1,3 +1,4 @@
+import com.google.common.base.Stopwatch;
 import com.google.gson.Gson;
 import data.DoubanData;
 import data.SaveInfoData;
@@ -30,6 +31,8 @@ import java.nio.file.Files;
 import java.nio.file.OpenOption;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Scanner;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -75,6 +78,7 @@ public class Main {
     private static int itemNum = 0;
     private static Proxy proxy = null;
     private static ArrayBlockingQueue<ProxyDataItem> proxies = new ArrayBlockingQueue<>(5);
+    private static Stopwatch sw = Stopwatch.createStarted();
 
     private static final OkHttpClient.Builder builder = new OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
@@ -83,7 +87,7 @@ public class Main {
             .followSslRedirects(false);
     private static OkHttpClient client = null;
 
-    private static String getHtml(String url) throws IOException, InterruptedException {
+    private static DoubanData parseData(String url, String id) throws IOException, InterruptedException {
         Request request = new Request.Builder().url(url).build();
 
         while (true) {
@@ -98,19 +102,44 @@ public class Main {
 
 
             try (Response response = client.newCall(request).execute()) {
-                if (!response.isSuccessful()) {
+                if (response.code() != 200) {
+                    System.out.println("Response status code: "+ response.code());
                     if (response.code() == 404) {
-                        return "";
+                        DoubanData data = new DoubanData();
+                        data.bookname = "404 NOT FOUND";
+                        return data;
                     }
                     proxy = null;
                     client = null;
-                    System.out.println("获取html失败:" + response.body());
 
                     continue;
                 }
-                ResponseBody responseBody = response.body();
+                ResponseBody responseBody = Objects.requireNonNull(response.body());
 
-                return Objects.requireNonNull(responseBody).string();
+                String html = responseBody.string();
+                if (isTextEmpty(html)) {
+                    System.out.println("获取html为空，重试");
+                    proxy = null;
+                    client = null;
+
+                    continue;
+                }
+
+                DoubanData data = getData(html, id);
+                if (isTextEmpty(data.bookname) && isTextEmpty(data.ISBN)) {
+                    if (html.contains("你想访问的条目豆瓣不收录")) {
+                        System.out.println("你想访问的条目豆瓣不收录: " + url);
+                        DoubanData d = new DoubanData();
+                        d.bookname = "404 NOT FOUND";
+                        return d;
+                    }
+                    System.out.println("解析HTML失败: " + html);
+                    proxy = null;
+                    client = null;
+                    continue;
+                }
+
+                return data;
 
             } catch (Exception e) {
                 System.out.println(e.getMessage());
@@ -162,18 +191,16 @@ public class Main {
     }
 
 
-    private static DoubanData getData(String url, String id) throws Exception {
+    private static DoubanData getData(String html, String id) throws Exception {
         DoubanData data = new DoubanData();
 
-        String html = getHtml(url);
-        if(isTextEmpty(html)){
-            return new DoubanData();
-        }
         Document document = Jsoup.parse(html);
         data.bookname = document.select("div#wrapper > h1 > span").text();
-        System.out.println(data.bookname);
-        System.out.println("进入抓取方法");
         data.author = document.select("#info > span:nth-child(1) > a").text();
+        if (isTextEmpty(data.author)) {
+            data.author = document.select("#info > a:nth-child(2)").text();
+        }
+
         if (document.select("#info").size() > 0) {
             Elements infoEle = document.select("#info").get(0).children();
             // if()
@@ -221,7 +248,7 @@ public class Main {
                 } else if (element.children().size() > 0) {
                     if (element.children().get(0).text().contains("译者")) {
                         data.translator = element.children().get(1).text();
-                        System.out.println(data.translator);
+//                        System.out.println(data.translator);
                     }
                 }
 
@@ -229,15 +256,22 @@ public class Main {
         }
 
         //#link-report > span.short > div
-        data.contentIntro = String.join(System.lineSeparator(), document.select("#link-report > div > div.intro").select("p").eachText());
-        if (document.select("#link-report > span.all.hidden > div > div") != null) {
-            data.contentIntro += String.join(System.lineSeparator(), document.select("#link-report > span.all.hidden > div > div.intro").select("p").eachText());
+//        data.contentIntro = String.join(System.lineSeparator(), document.select("#link-report > div > div.intro").select("p").eachText());
+        if (document.select("#link-report > span.all.hidden > div > div.intro") != null) {
+            data.contentIntro = String.join(System.lineSeparator(), document.select("#link-report > span.all.hidden > div > div.intro").select("p").eachText());
+        } else {
+            data.contentIntro = String.join(System.lineSeparator(), document.select("#link-report > div > div.intro").select("p").eachText());
         }
 
-        data.directory = String.join(System.lineSeparator(), document.select("#dir_" + id + "_short").eachText());
-        if (document.select("#dir_" + id + "_full") != null) {
-            data.directory += String.join(System.lineSeparator(), document.select("#dir_" + id + "_full").eachText());
+//        data.directory = String.join(System.lineSeparator(), document.select("#dir_" + id + "_full").eachText());
+        Elements brs = document.select("#dir_" + id + "_full").select("br");
+        List<String> dirs = new ArrayList<>();
+        for (Element br :
+                brs) {
+            dirs.add(br.previousSibling().outerHtml().trim());
         }
+        data.directory = String.join(System.lineSeparator(), dirs);
+
         //初始化标签
         if (document.select("#db-tags-section > div").size() > 0) {
             Elements tagEles = document.select("#db-tags-section > div").get(0).children();
@@ -249,7 +283,7 @@ public class Main {
         //   String fiveRate=document.select("#interest_sectl > div > span:nth-child(5)").get(0).text();
         if (document.select("#interest_sectl > div > span:nth-child(5)").size() > 0) {
             data.ratingData.fiveRating = document.select("#interest_sectl > div > span:nth-child(5)").get(0).text();
-            System.out.println(data.ratingData.fiveRating);
+//            System.out.println(data.ratingData.fiveRating);
             data.ratingData.ratingNum = document.select("#interest_sectl > div > div.rating_self > strong").text();
             data.ratingData.peopleNum = document.select("#interest_sectl > div > div.rating_self.clearfix > div > div.rating_sum > span > a > span").text();
 
@@ -257,7 +291,7 @@ public class Main {
             data.ratingData.threeRating = document.select("#interest_sectl > div > span:nth-child(13)").text();
             data.ratingData.twoRating = document.select("#interest_sectl > div > span:nth-child(17)").text();
             data.ratingData.oneRating = document.select("#interest_sectl > div > span:nth-child(21)").text();
-            System.out.println(data.ratingData.oneRating);
+//            System.out.println(data.ratingData.oneRating);
         }
         //初始化购买地方
         if (document.select("#buyinfo-printed > ul").size() > 0) {
@@ -269,9 +303,9 @@ public class Main {
                         whereBuyData.provider = whereBuyEle.children().get(0).children().get(0).text();
                         whereBuyData.link = whereBuyEle.children().get(0).attr("href");
                         whereBuyData.price = whereBuyEle.children().get(1).children().get(0).text();
-                        System.out.println(whereBuyData.price + whereBuyData.link + whereBuyData.provider);
+//                        System.out.println(whereBuyData.price + whereBuyData.link + whereBuyData.provider);
                         data.whereBuyData.add(whereBuyData);
-                    } catch (Exception e) {
+                    } catch (Exception ignored) {
 
                     }
 
@@ -282,7 +316,12 @@ public class Main {
         for (Element element :
                 elements) {
             if (element.text().contains("作者简介")) {
-                data.authorInfo = String.join(System.lineSeparator(), element.nextElementSibling().select("div.intro > p").eachText());
+                if (element.nextElementSibling().select("span.all.hidden > div.intro") != null) {
+                    data.authorInfo = String.join(System.lineSeparator(), element.nextElementSibling().select("span.all.hidden > div.intro").select("p").eachText());
+                } else {
+                    data.authorInfo = String.join(System.lineSeparator(), element.nextElementSibling().select("div.intro > p").eachText());
+                }
+
             }
         }
         if (document.select("#collector").size() > 0) {
@@ -318,13 +357,13 @@ public class Main {
 
 //        wirteIntoExcel(data);
 
-        System.out.println(data.readingNum + ":" + data.readedNum + ":" + data.wantReadNum);
+//        System.out.println(data.readingNum + ":" + data.readedNum + ":" + data.wantReadNum);
 
         return data;
     }
 
     private static boolean isTextEmpty(String content) {
-        return content == null || content.equals("");
+        return content == null || content.trim().equals("");
     }
 
     private static void wirteIntoExcel(File file, DoubanData data) throws Exception {
@@ -785,14 +824,26 @@ public class Main {
             Matcher matcher = pattern.matcher(url);
             String id = matcher.replaceAll("");
 
-            DoubanData data = getData(url, id);
+            sw.reset();
+            sw.start();
+            DoubanData data = parseData(url, id);
+            System.out.println("抓取数据花费: " + sw.elapsed(TimeUnit.MILLISECONDS));
 
 //            wirteIntoExcel(excelFile, data);
 
-            printer.printRecord(data.bookname, data.oriAuthor, data.subTitle, data.author, data.publish, data.publishTime,
-                    data.pageNumber, data.price, data.binging, data.seriesOfBook, data.authorInfo, data.ISBN, data.translator,
-                    data.contentIntro, data.directory, gson.toJson(data.tags), data.producer, gson.toJson(data.ratingData),
-                    gson.toJson(data.whereBuyData), data.promotion, data.readingNum, data.readedNum, data.wantReadNum);
+            System.out.println("图书数据: " + data.toString());
+
+            if (!data.bookname.contains("404 NOT FOUND")) {
+                sw.reset();
+                sw.start();
+                printer.printRecord(data.bookname, data.oriAuthor, data.subTitle, data.author, data.publish, data.publishTime,
+                        data.pageNumber, data.price, data.binging, data.seriesOfBook, data.authorInfo, data.ISBN, data.translator,
+                        data.contentIntro, data.directory, gson.toJson(data.tags), data.producer, gson.toJson(data.ratingData),
+                        gson.toJson(data.whereBuyData), data.promotion, data.readingNum, data.readedNum, data.wantReadNum);
+                printer.flush();
+                System.out.println("写入数据花费: " + sw.elapsed(TimeUnit.MILLISECONDS));
+            }
+
             index++;
             System.out.println("结束抓取: " + excelNum + ": " + itemNum);
             itemNum++;
@@ -805,8 +856,9 @@ public class Main {
         itemNum = data.itemNum;
 
         while (true) {
-            OpenOption[] options = new OpenOption[] {StandardOpenOption.WRITE, StandardOpenOption.CREATE_NEW, StandardOpenOption.APPEND};
+            OpenOption[] options = new OpenOption[] {StandardOpenOption.WRITE, StandardOpenOption.CREATE, StandardOpenOption.APPEND};
             BufferedWriter writer = Files.newBufferedWriter(Paths.get(Utils.getCSVFile(excelNum)), Charset.forName("UTF-8"), options);
+
             CSVPrinter printer = new CSVPrinter(writer, CSVFormat.DEFAULT.withHeader(
                     "书名", "原作者", "副标题", "作者", "出版社", "出版日期", "页数", "价格", "装帧", "丛书",
                     "作者简介", "ISBN", "译者", "内容简介", "目录", "标签", "出品方", "评分", "在哪买",
