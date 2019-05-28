@@ -840,7 +840,7 @@ public class Main {
                         data.pageNumber, data.price, data.binging, data.seriesOfBook, data.authorInfo, data.ISBN, data.translator,
                         data.contentIntro, data.directory, gson.toJson(data.tags), data.producer, gson.toJson(data.ratingData),
                         gson.toJson(data.whereBuyData), data.promotion, data.readingNum, data.readedNum, data.wantReadNum);
-                printer.flush();
+//                printer.flush();
                 System.out.println("写入数据花费: " + sw.elapsed(TimeUnit.MILLISECONDS));
             }
 
