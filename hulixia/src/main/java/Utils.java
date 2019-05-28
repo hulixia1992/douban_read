@@ -8,15 +8,15 @@ import java.util.List;
 import java.util.Properties;
 
 public class Utils {
-    private static String INFO_FAIL_PATH = "D:/other/douban_index_info.txt";
-    private static String ERROR_URL_FILE = "D:/other/error_url.txt";
+    private static String INFO_FAIL_PATH = "/Users/xuqiaolun/PySpider/read/douban_index_info.txt";
+    private static String ERROR_URL_FILE = "/Users/xuqiaolun/PySpider/read/error_url.txt";
     //   private static String SAVE_EXCEL_FILE = "D:/other/error_url.txt";
 
     private static String PAGE_NUM = "page_num";
     private static String ITEM_NUM = "item_num";
 
     static String getUrlFilePath(int pageNum) {
-        return "D:/other/douban_url/" + pageNum + ".txt";
+        return "/Users/xuqiaolun/PySpider/douban/" + pageNum + ".txt";
     }
 
     static String getExcelFile(int pageNum) {
@@ -24,7 +24,7 @@ public class Utils {
     }
 
     static String getCSVFile(int pageNum) {
-        return "D:/other/douban_read_info/" + pageNum + ".csv";
+        return "/Users/xuqiaolun/PySpider/read/data/" + pageNum + ".csv";
     }
 
     static void saveIndexInfo(int pageNum, int itemNum) throws IOException {
