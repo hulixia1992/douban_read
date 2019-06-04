@@ -1,33 +1,38 @@
-import data.DoubanUrlData;
-import data.SaveInfoData;
+package utils;
+
+import douban_book_detail.data.DoubanUrlData;
+import douban_book_detail.data.SaveInfoData;
 
 import java.io.*;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 
+import static utils.FilePath.ERROR_URL_FILE;
+import static utils.FilePath.INFO_FAIL_PATH;
+
 public class Utils {
-    private static String INFO_FAIL_PATH = "/Users/xuqiaolun/PySpider/read/douban_index_info.txt";
-    private static String ERROR_URL_FILE = "/Users/xuqiaolun/PySpider/read/error_url.txt";
+    public static boolean isTextEmpty(String content) {
+        return content == null || content.trim().equals("");
+    }
+
     //   private static String SAVE_EXCEL_FILE = "D:/other/error_url.txt";
 
     private static String PAGE_NUM = "page_num";
     private static String ITEM_NUM = "item_num";
+    private static String PROXY_URL = "proxy_url";
 
-    static String getUrlFilePath(int pageNum) {
-        return "/Users/xuqiaolun/PySpider/douban/" + pageNum + ".txt";
+    public static String getUrlFilePath(int pageNum) {
+        return FilePath.URL_FILE_PATH + pageNum + ".txt";
     }
 
-    static String getExcelFile(int pageNum) {
-        return "D:/other/douban_read_info/" + pageNum + ".xls";
+
+
+    public static String getCSVFile(int pageNum) {
+        return FilePath.CVS_FILE_PATH + pageNum + ".csv";
     }
 
-    static String getCSVFile(int pageNum) {
-        return "/Users/xuqiaolun/PySpider/read/data/" + pageNum + ".csv";
-    }
-
-    static void saveIndexInfo(int pageNum, int itemNum) throws IOException {
+    public  static void saveIndexInfo(int pageNum, int itemNum) throws IOException {
         //创建properties集合
         Properties prop = new Properties();
 
@@ -46,7 +51,7 @@ public class Utils {
 
     }
 
-    static SaveInfoData getSaveInfo() throws IOException {
+    public static SaveInfoData getSaveInfo() throws IOException {
         //调用load将文件里的数据读取
         Properties prop = new Properties();
         FileInputStream fis = new FileInputStream(INFO_FAIL_PATH);
@@ -54,6 +59,7 @@ public class Utils {
         SaveInfoData data = new SaveInfoData();
         data.pageNum = Integer.parseInt(prop.getProperty(PAGE_NUM, "1"));
         data.itemNum = Integer.parseInt(prop.getProperty(ITEM_NUM, "0"));
+        data.proxyUrl = prop.getProperty(PROXY_URL);
         return data;
     }
 
@@ -85,7 +91,7 @@ public class Utils {
         return urldatas;
     }
 
-    static void saveErrorUrl(String url) {
+    public   static void saveErrorUrl(String url) {
 
         BufferedWriter out = null;
         try {
@@ -109,4 +115,3 @@ public class Utils {
         }
     }
 }
-

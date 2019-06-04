@@ -1,4 +1,4 @@
-package data.proxydata;
+package douban_book_detail.data.proxydata;
 
 import com.google.gson.annotations.SerializedName;
 
@@ -7,6 +7,6 @@ public class ProxyDataResponse {
     public String code;
     @SerializedName("msg")
     public String msg;
-    @SerializedName("data")
+    @SerializedName("douban_book_detail/data")
     public ProxyData data;
 }

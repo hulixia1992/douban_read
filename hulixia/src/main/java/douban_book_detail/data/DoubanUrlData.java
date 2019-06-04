@@ -1,4 +1,4 @@
-package data;
+package douban_book_detail.data;
 
 public class DoubanUrlData {
     public String ISBN;

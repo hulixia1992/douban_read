@@ -1,4 +1,4 @@
-package data.proxydata;
+package douban_book_detail.data.proxydata;
 
 import com.google.gson.annotations.SerializedName;
 
